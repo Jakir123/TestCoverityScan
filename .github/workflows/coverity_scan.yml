@@ -3,37 +3,50 @@ name: Coverity Scan
 on:
   push:
     branches:
-      - main  # Runs only on the main branch (change if needed)
+      - main
+  pull_request:
+    branches:
+      - main
+  schedule:
+    - cron: '0 2 * * 0'  # Runs every Sunday at 2 AM UTC
 
 jobs:
-  coverity_scan:
+  coverity:
     runs-on: ubuntu-latest
+
     steps:
-      - name: Checkout code
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install dependencies
-        run: |
-          sudo apt update
-          sudo apt install -y wget tar curl unzip
+      - name: Set up JDK 17
+        uses: actions/setup-java@v3
+        with:
+          distribution: 'temurin'
+          java-version: '17'
 
-      - name: Download Coverity Tool
+      - name: Grant execute permissions for Gradle wrapper
+        run: chmod +x gradlew
+
+      - name: Build project (Check if it compiles before Coverity scan)
+        run: ./gradlew assembleDebug --stacktrace
+
+      - name: Download Coverity Analysis Tool
         run: |
           wget --post-data "token=${{ secrets.COVERITY_TOKEN }}&project=${{ github.repository }}" -O coverity_tool.tgz https://scan.coverity.com/download/linux64
-          tar -xzf coverity_tool.tgz
+          tar -xvzf coverity_tool.tgz
 
-      - name: Run Coverity Scan
+      - name: Run Coverity Build
         run: |
-          ./cov-analysis*/bin/cov-build --dir cov-int flutter build apk
+          ./cov-analysis*/bin/cov-build --dir cov-int ./gradlew assembleDebug
 
-      - name: Compress scan results
-        run: tar czvf myproject.tgz cov-int
+      - name: Compress analysis results
+        run: tar czvf cov-int.tgz cov-int
 
-      - name: Upload scan results to Coverity
+      - name: Upload results to Coverity
         run: |
           curl --form token=${{ secrets.COVERITY_TOKEN }} \
-               --form email=${{ github.actor }}@users.noreply.github.com \
-               --form file=@myproject.tgz \
-               --form version="${{ github.ref }}" \
-               --form description="Automated scan for commit ${{ github.sha }}" \
+               --form email="your-email@example.com" \
+               --form file=@cov-int.tgz \
+               --form version="JetpackCompose" \
+               --form description="Jetpack Compose Project Scan" \
                https://scan.coverity.com/builds?project=${{ github.repository }}
